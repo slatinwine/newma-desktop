@@ -59,7 +59,7 @@ export class GatewayManager {
         env.WORKSPACE_DIR = this.config.workspaceDir || process.cwd();
       }
 
-      this.process = spawn('node', [gatewayScript], {
+      this.process = spawn(process.execPath, [gatewayScript], {
         cwd: this.config.gatewayPath,
         env,
         stdio: 'pipe',

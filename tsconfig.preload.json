@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist/preload",
-    "module": "es2020"
+    "module": "commonjs"
   },
   "include": ["src/preload/**/*"],
   "exclude": ["node_modules", "dist"]

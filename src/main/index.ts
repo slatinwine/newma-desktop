@@ -1,12 +1,8 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, protocol } from 'electron';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'fs';
 import { GatewayManager } from './gateway/GatewayManager';
 import { ConfigManager, ConnectionMode } from './config/ConfigManager';
-
-// ES module compatibility
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 let gatewayManager: GatewayManager | null = null;
@@ -35,10 +31,33 @@ function createWindow() {
   });
 
   // Load Expo Web build
-  const indexPath = path.join(__dirname, '../../renderer/build/index.html');
+  const indexPath = path.join(__dirname, '../../../src/renderer/build/index.html');
+  const buildDir = path.join(__dirname, '../../../src/renderer/build');
 
   if (mainWindow) {
     mainWindow.loadFile(indexPath);
+
+    // Intercept requests for static assets
+    mainWindow.webContents.session.protocol.interceptFileProtocol('file', (request, callback) => {
+      // Only intercept requests starting with /static/ or other root-relative paths
+      if (request.url.startsWith('file:///static/') ||
+          request.url.startsWith('file:///fonts/') ||
+          request.url.startsWith('file:///manifest.json') ||
+          request.url.startsWith('file:///favicon') ||
+          request.url.startsWith('file:///pwa/')) {
+
+        // Remove file:/// prefix
+        let urlPath = request.url.substring(8); // Remove 'file:///'
+
+        // Build the full path to the renderer build directory
+        const filePath = path.join(buildDir, urlPath);
+        callback({ path: filePath });
+      } else {
+        // Default handling for other files
+        const url = request.url.substring(7); // Remove 'file://'
+        callback({ path: url });
+      }
+    });
 
     // Open DevTools in development
     if (process.env.NODE_ENV === 'development') {
@@ -72,7 +91,7 @@ async function startGateway() {
     return;
   }
 
-  const gatewayPath = path.join(__dirname, '../../gateway-source');
+  const gatewayPath = path.join(__dirname, '../../../gateway-source');
   const gatewayConfig = configManager.getGatewayConfig();
   const newmaConfig = configManager.getNewmaConfig();
 

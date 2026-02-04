@@ -69,7 +69,7 @@ const DEFAULT_CONFIG: AppConfigData = {
   },
   newma: {
     enabled: true,
-    path: 'newma',
+    path: '/opt/homebrew/Cellar/node/25.5.0/bin/node /Users/mac/kode/dist/cli.js',
     workspace: '{userHome}/NewmaWorkspace',
     backend: 'newma',
   },

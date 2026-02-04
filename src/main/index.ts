@@ -35,7 +35,7 @@ function createWindow() {
   });
 
   // Load Expo Web build
-  const indexPath = path.join(__dirname, '../renderer/build/index.html');
+  const indexPath = path.join(__dirname, '../../renderer/build/index.html');
 
   if (mainWindow) {
     mainWindow.loadFile(indexPath);

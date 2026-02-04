@@ -2,7 +2,7 @@
   "name": "newma-desktop",
   "version": "1.0.0",
   "description": "Newma Desktop - Cross-platform AI chat application with local Gateway integration",
-  "main": "dist/main/index.js",
+  "main": "dist/main/main/index.js",
   "author": "Newma Team",
   "license": "MIT",
   "private": true,

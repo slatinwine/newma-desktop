@@ -94,6 +94,9 @@ async function startGateway() {
   const gatewayPath = path.join(__dirname, '../../../gateway-source');
   const gatewayConfig = configManager.getGatewayConfig();
   const newmaConfig = configManager.getNewmaConfig();
+  const gatewayAuthConfig = configManager.getGatewayAuthConfig();
+  const gatewayDatabaseConfig = configManager.getGatewayDatabaseConfig();
+  const gatewayExplorationConfig = configManager.getGatewayExplorationConfig();
 
   try {
     gatewayManager = new GatewayManager({
@@ -102,6 +105,14 @@ async function startGateway() {
       backend: newmaConfig.backend,
       newmaPath: newmaConfig.path,
       workspaceDir: newmaConfig.workspace.replace('{userHome}', app.getPath('home')),
+      authEnabled: gatewayAuthConfig.enabled,
+      jwtSecret: gatewayAuthConfig.enabled ? configManager.getOrCreateJWTSecret() : undefined,
+      encryptionKey: gatewayAuthConfig.enabled ? configManager.getOrCreateEncryptionKey() : undefined,
+      databaseEnabled: gatewayDatabaseConfig.enabled,
+      databasePath: gatewayDatabaseConfig.path,
+      explorationEnabled: gatewayExplorationConfig.enabled,
+      explorationLogDir: gatewayExplorationConfig.logDir,
+      useNewmaApiMode: configManager.isNewmaApiModeEnabled(), // 🔥 新增：传递API模式配置
     });
 
     await gatewayManager.start();

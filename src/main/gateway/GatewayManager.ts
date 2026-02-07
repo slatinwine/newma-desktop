@@ -9,6 +9,14 @@ export interface GatewayConfig {
   backend: 'newma' | 'api' | 'mock';
   newmaPath?: string;
   workspaceDir?: string;
+  authEnabled?: boolean;
+  jwtSecret?: string;
+  encryptionKey?: string;
+  databaseEnabled?: boolean;
+  databasePath?: string;
+  explorationEnabled?: boolean;
+  explorationLogDir?: string;
+  useNewmaApiMode?: boolean; // 🔥 新增：是否使用Newma API模式
 }
 
 export interface GatewayStatus {
@@ -51,6 +59,7 @@ export class GatewayManager {
         ...process.env,
         PORT: this.config.port.toString(),
         AI_BACKEND: this.config.backend,
+        PATH: `/opt/homebrew/Cellar/node/25.5.0/bin:${process.env.PATH}`, // Add Node.js to PATH
       };
 
       // Add newma-specific environment variables
@@ -59,7 +68,37 @@ export class GatewayManager {
         env.WORKSPACE_DIR = this.config.workspaceDir || process.cwd();
       }
 
-      this.process = spawn(process.execPath, [gatewayScript], {
+      // Add authentication configuration
+      if (this.config.authEnabled) {
+        if (this.config.jwtSecret) {
+          env.JWT_SECRET = this.config.jwtSecret;
+        }
+        if (this.config.encryptionKey) {
+          env.ENCRYPTION_KEY = this.config.encryptionKey;
+        }
+      }
+
+      // Add database configuration
+      if (this.config.databaseEnabled) {
+        env.DATABASE_PATH = this.config.databasePath || './database/gateway.db';
+      }
+
+      // Add exploration configuration
+      if (this.config.explorationEnabled) {
+        env.EXPLORATION_ENABLED = 'true';
+        if (this.config.explorationLogDir) {
+          env.EXPLORATION_LOG_DIR = this.config.explorationLogDir;
+        }
+      }
+
+      // 🔥 新增：Newma API模式配置
+      if (this.config.useNewmaApiMode) {
+        env.NEWMA_API_MODE = 'true';
+      }
+
+      // Use actual Node.js binary, not Electron's process.execPath
+      const nodePath = '/opt/homebrew/Cellar/node/25.5.0/bin/node';
+      this.process = spawn(nodePath, [gatewayScript], {
         cwd: this.config.gatewayPath,
         env,
         stdio: 'pipe',

@@ -6,9 +6,8 @@ package-lock.json
 dist/
 *.log
 
-# Gateway
-gateway-source/node_modules/
-gateway-source/dist/
+# Gateway (symlink - exclude entirely)
+gateway-source
 
 # Renderer build
 src/renderer/build/

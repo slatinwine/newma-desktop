@@ -92,7 +92,7 @@ const DEFAULT_CONFIG: AppConfigData = {
   },
   newma: {
     enabled: true,
-    path: 'node /opt/homebrew/bin/newma',
+    path: 'newma',
     workspace: '{userHome}/NewmaWorkspace',
     backend: 'newma',
     useApiMode: true, // 🔥 新增：默认启用API模式

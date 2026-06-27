@@ -17,17 +17,23 @@
 
 - Node.js 18+ and npm
 - Python 3 (for node-gyp, if building native modules)
+- **Gateway source**: the `gateway-source` entry is a symlink. By default it points at
+  `/Users/mac/mobilenewma/gateway`. On a fresh checkout or a different machine, recreate it
+  to wherever your gateway sources live:
+
+  ```bash
+  ln -s /path/to/your/gateway gateway-source
+  ```
+
+  Without this, `npm install` / `npm run build:gateway` will fail (no `gateway-source/dist/index.js`).
 
 ### Installation
 
 ```bash
-# Clone or navigate to the project
-cd /Users/mac/desktopnewma
-
-# Install dependencies
+# Install dependencies (also builds the gateway via postinstall)
 npm install
 
-# Build Gateway (will be done automatically in postinstall)
+# If the gateway symlink target changed, rebuild it
 npm run build:gateway
 
 # Build Expo Web app
@@ -110,7 +116,7 @@ Configuration is stored in:
   "mode": "local",
   "gateway": {
     "type": "embedded",
-    "port": 18789,
+    "port": 18790,
     "autoStart": true
   },
   "newma": {
@@ -140,7 +146,7 @@ The application is designed to support cloud mode in the future. See [ELECTRON_A
 
 2. Check Gateway logs in the console
 
-3. Verify port 18789 is not in use
+3. Verify port 18790 is not in use
 
 ### Web app not loading
 

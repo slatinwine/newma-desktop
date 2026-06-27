@@ -1,24 +1,65 @@
-import { app, BrowserWindow, ipcMain, protocol } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, MenuItemConstructorOptions } from 'electron';
+import type { BrowserWindowConstructorOptions } from 'electron';
 import path from 'path';
-import fs from 'fs';
-import { GatewayManager } from './gateway/GatewayManager';
+import { GatewayManager, GatewayStatus } from './gateway/GatewayManager';
 import { ConfigManager, ConnectionMode } from './config/ConfigManager';
+import { loadWindowState, trackWindowState } from './windowState';
 
 let mainWindow: BrowserWindow | null = null;
 let gatewayManager: GatewayManager | null = null;
 let configManager: ConfigManager | null = null;
+let lastGatewayStatus: GatewayStatus | null = null;
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function createGatewayErrorStatus(error: unknown): GatewayStatus {
+  return {
+    running: false,
+    state: 'error',
+    port: configManager?.getGatewayConfig().port ?? 0,
+    error: getErrorMessage(error),
+  };
+}
+
+function emitGatewayStatus(status?: GatewayStatus) {
+  const nextStatus = status ?? gatewayManager?.getStatus() ?? lastGatewayStatus ?? createGatewayErrorStatus('本地网关未启动');
+  lastGatewayStatus = nextStatus;
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send('gateway-status-changed', nextStatus);
+}
+
+function focusMainWindow() {
+  if (!mainWindow) {
+    return;
+  }
+
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+
+  mainWindow.focus();
+}
 
 /**
  * Create the main application window
  */
 function createWindow() {
   const appConfig = configManager?.getAppConfig();
+  const userDataPath = app.getPath('userData');
+  const savedWindowState = loadWindowState(userDataPath);
 
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+  const windowOptions: BrowserWindowConstructorOptions = {
+    width: savedWindowState.width,
+    height: savedWindowState.height,
     minWidth: 800,
     minHeight: 600,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -27,52 +68,81 @@ function createWindow() {
     },
     icon: path.join(__dirname, '../../resources/icons/icon.png'),
     title: appConfig?.name || 'Newma Desktop',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#07C160',
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset',
+      vibrancy: 'under-window',
+      visualEffectState: 'active',
+      trafficLightPosition: { x: 16, y: 18 },
+    } : {}),
+  };
+
+  if (typeof savedWindowState.x === 'number' && typeof savedWindowState.y === 'number') {
+    windowOptions.x = savedWindowState.x;
+    windowOptions.y = savedWindowState.y;
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
+  const window = mainWindow;
+  trackWindowState(window, userDataPath);
+
+  if (savedWindowState.isMaximized) {
+    window.maximize();
+  }
+
+  window.once('ready-to-show', () => {
+    if (!window.isDestroyed()) {
+      window.show();
+    }
   });
 
   // Load Expo Web build
   const indexPath = path.join(__dirname, '../../../src/renderer/build/index.html');
   const buildDir = path.join(__dirname, '../../../src/renderer/build');
 
-  if (mainWindow) {
-    mainWindow.loadFile(indexPath);
+  // Intercept requests for static assets
+  window.webContents.session.protocol.interceptFileProtocol('file', (request, callback) => {
+    // Only intercept requests starting with /static/ or other root-relative paths
+    if (request.url.startsWith('file:///static/') ||
+        request.url.startsWith('file:///fonts/') ||
+        request.url.startsWith('file:///manifest.json') ||
+        request.url.startsWith('file:///favicon') ||
+        request.url.startsWith('file:///pwa/')) {
 
-    // Intercept requests for static assets
-    mainWindow.webContents.session.protocol.interceptFileProtocol('file', (request, callback) => {
-      // Only intercept requests starting with /static/ or other root-relative paths
-      if (request.url.startsWith('file:///static/') ||
-          request.url.startsWith('file:///fonts/') ||
-          request.url.startsWith('file:///manifest.json') ||
-          request.url.startsWith('file:///favicon') ||
-          request.url.startsWith('file:///pwa/')) {
+      // Remove file:/// prefix
+      const urlPath = request.url.substring(8); // Remove 'file:///'
 
-        // Remove file:/// prefix
-        let urlPath = request.url.substring(8); // Remove 'file:///'
-
-        // Build the full path to the renderer build directory
-        const filePath = path.join(buildDir, urlPath);
-        callback({ path: filePath });
-      } else {
-        // Default handling for other files
-        const url = request.url.substring(7); // Remove 'file://'
-        callback({ path: url });
-      }
-    });
-
-    // Open DevTools in development
-    if (process.env.NODE_ENV === 'development') {
-      mainWindow.webContents.openDevTools();
+      // Build the full path to the renderer build directory
+      const filePath = path.join(buildDir, urlPath);
+      callback({ path: filePath });
+    } else {
+      // Default handling for other files
+      const url = request.url.substring(7); // Remove 'file://'
+      callback({ path: url });
     }
+  });
 
-    mainWindow.on('closed', () => {
-      mainWindow = null;
-    });
+  window.loadFile(indexPath);
 
-    // Handle window title updates from renderer
-    mainWindow.on('page-title-updated', (event) => {
-      event.preventDefault();
-    });
+  window.webContents.once('did-finish-load', () => {
+    emitGatewayStatus();
+  });
+
+  // Open DevTools in development
+  if (process.env.NODE_ENV === 'development') {
+    window.webContents.openDevTools();
   }
+
+  window.on('closed', () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
+  });
+
+  // Handle window title updates from renderer
+  window.on('page-title-updated', (event) => {
+    event.preventDefault();
+  });
 }
 
 /**
@@ -88,6 +158,11 @@ async function startGateway() {
   // Only start embedded Gateway in local or hybrid mode
   if (config.mode === ConnectionMode.CLOUD) {
     console.log('Cloud mode: skipping local Gateway startup');
+    emitGatewayStatus({
+      running: false,
+      state: 'running',
+      port: config.gateway.port,
+    });
     return;
   }
 
@@ -114,8 +189,11 @@ async function startGateway() {
       explorationLogDir: gatewayExplorationConfig.logDir,
       useNewmaApiMode: configManager.isNewmaApiModeEnabled(), // 🔥 新增：传递API模式配置
     });
+    gatewayManager.onStatusChange(emitGatewayStatus);
+    emitGatewayStatus(gatewayManager.getStatus());
 
     await gatewayManager.start();
+    emitGatewayStatus(gatewayManager.getStatus());
     console.log('✓ Gateway started successfully');
 
     // Setup health check if enabled
@@ -124,6 +202,7 @@ async function startGateway() {
     }
   } catch (error) {
     console.error('✗ Failed to start Gateway:', error);
+    emitGatewayStatus(createGatewayErrorStatus(error));
     throw error;
   }
 }
@@ -152,11 +231,18 @@ function setupHealthCheck(interval: number) {
       const healthy = await gatewayManager.healthCheck();
       if (!healthy) {
         console.warn('Gateway health check failed, attempting restart...');
+        emitGatewayStatus({
+          ...gatewayManager.getStatus(),
+          state: 'error',
+          error: '本地网关健康检查失败，正在重启',
+        });
         try {
           await gatewayManager.restart();
+          emitGatewayStatus(gatewayManager.getStatus());
           console.log('✓ Gateway restarted successfully');
         } catch (error) {
           console.error('✗ Failed to restart Gateway:', error);
+          emitGatewayStatus(createGatewayErrorStatus(error));
         }
       }
     }
@@ -207,7 +293,7 @@ function setupIpcHandlers() {
   // Handle get-gateway-status
   ipcMain.handle('get-gateway-status', async () => {
     if (!gatewayManager) {
-      return { running: false };
+      return lastGatewayStatus ?? createGatewayErrorStatus('本地网关未启动');
     }
     return gatewayManager.getStatus();
   });
@@ -244,13 +330,92 @@ function setupIpcHandlers() {
   });
 }
 
+/**
+ * Application menu — minimal, Apple-style.
+ * Only App (About/Quit) + Edit (standard edit roles) + Window (minimize/fullscreen).
+ * View menu is dropped; Cmd+R / Cmd+Option+I are kept as hidden dev shortcuts.
+ */
+function setupApplicationMenu() {
+  const isMac = process.platform === 'darwin';
+
+  const appMenu: MenuItemConstructorOptions = isMac
+    ? {
+        label: app.name,
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      }
+    : {
+        label: '文件',
+        submenu: [{ role: 'quit' }],
+      };
+
+  const editMenu: MenuItemConstructorOptions = {
+    label: '编辑',
+    submenu: [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      ...(isMac
+        ? [
+            { role: 'pasteAndMatchStyle' } as MenuItemConstructorOptions,
+            { role: 'delete' } as MenuItemConstructorOptions,
+            { role: 'selectAll' } as MenuItemConstructorOptions,
+          ]
+        : [{ role: 'selectAll' } as MenuItemConstructorOptions]),
+    ],
+  };
+
+  const windowMenu: MenuItemConstructorOptions = {
+    label: '窗口',
+    submenu: [
+      { role: 'minimize' },
+      { role: 'zoom' },
+      { type: 'separator' },
+      { role: 'front' },
+      ...(isMac ? [{ role: 'togglefullscreen' } as MenuItemConstructorOptions] : []),
+    ],
+  };
+
+  // Hidden dev shortcuts — no visible View menu, but Cmd+R / Cmd+Option+I still work.
+  const devShortcuts: MenuItemConstructorOptions = {
+    label: '开发者',
+    visible: false,
+    submenu: [
+      { role: 'reload' },
+      { role: 'toggleDevTools' },
+    ],
+  };
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate([appMenu, editMenu, windowMenu, devShortcuts]));
+}
+
 async function initialize() {
   // Initialize config manager
   configManager = new ConfigManager();
   const config = configManager.getConfig();
+  lastGatewayStatus = {
+    running: false,
+    state: 'starting',
+    port: config.gateway.port,
+  };
 
   // Setup IPC handlers
   setupIpcHandlers();
+
+  // Minimal Apple-style application menu
+  setupApplicationMenu();
 
   console.log('═══════════════════════════════════════════════════════');
   console.log(`          ${config.app.name} v${config.version}`);
@@ -261,31 +426,43 @@ async function initialize() {
   console.log('═══════════════════════════════════════════════════════');
   console.log();
 
-  // Start Gateway
-  await startGateway();
-
   // Create window
   createWindow();
+
+  // Start Gateway after the shell is visible; readiness is pushed by IPC.
+  await startGateway();
 }
 
 /**
  * Handle app ready event
  */
-app.whenReady().then(async () => {
-  try {
-    await initialize();
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
-    app.on('activate', () => {
-      // On macOS, re-create window when dock icon is clicked
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
-      }
-    });
-  } catch (error) {
-    console.error('Failed to initialize app:', error);
-    app.quit();
-  }
-});
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', focusMainWindow);
+
+  app.whenReady().then(async () => {
+    try {
+      await initialize();
+
+      app.on('activate', () => {
+        // On macOS, re-create window when dock icon is clicked
+        if (BrowserWindow.getAllWindows().length === 0) {
+          createWindow();
+        }
+      });
+    } catch (error) {
+      console.error('Failed to initialize app:', error);
+      dialog.showErrorBox(
+        'Newma 启动失败',
+        `本地网关无法启动，请检查 Node.js 是否已安装。\n\n原因：${getErrorMessage(error)}`,
+      );
+      app.quit();
+    }
+  });
+}
 
 /**
  * Handle all windows closed

@@ -91,6 +91,7 @@ npm run dev
 | `npm run gen-icon` | 重新生成应用图标（resources/icons，PowerShell + GDI+） |
 | `npm run push` | 经 GitHub Actions 中转推送（github.com:443 被墙但 api.github.com 可达时用） |
 | `npm run pack` | electron-builder --dir 打包验证 |
+| `npm run dist:win` | 构建 Windows NSIS 安装包（dist-elec/*.exe） |
 
 > 网络直连 GitHub 被阻断时，`git push` 会超时；用 `npm run push`（或 `node scripts/push-via-actions.mjs`）
 > 走 api.github.com + Actions 中转，远端 SHA 与本地严格一致。
@@ -98,11 +99,15 @@ npm run dev
 ## 📦 打包
 
 ```bash
+npm run pack       # 免安装目录（dist-elec/win-unpacked）
+npm run dist:win   # Windows NSIS 安装包（内置 spawn UNKNOWN 自动重试）
 npm run dist       # 当前平台
-npm run dist:win   # Windows NSIS
 npm run dist:mac   # macOS
 npm run dist:linux # Linux
 ```
+
+> Windows 上 electron-builder 构建完会运行安装包提取卸载程序，Defender 首扫偶发拦截导致
+> `spawn UNKNOWN`——`dist:win` 已内置重试（`scripts/dist-win.mjs`，镜像变量默认指向 npmmirror）。
 
 ## 📝 License
 

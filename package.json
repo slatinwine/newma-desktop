@@ -1,92 +1,53 @@
 {
   "name": "newma-desktop",
-  "version": "1.0.0",
-  "description": "Newma Desktop - Cross-platform AI chat application with local Gateway integration",
-  "main": "dist/main/main/index.js",
+  "version": "2.0.0",
+  "description": "Newma Desktop - newma-web 嵌入版：Electron 壳内嵌 Newma Chat 网页，管理本地 newma --web 实例",
+  "main": "dist/main/index.js",
   "author": "Newma Team",
   "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "npm run build:main && electron .",
     "build": "npm run build:main && npm run build:preload",
     "build:main": "tsc -p tsconfig.main.json",
     "build:preload": "tsc -p tsconfig.preload.json",
-    "build:web": "node scripts/build-web.js",
-    "build:gateway": "node scripts/build-gateway.js",
-    "watch": "tsc -p tsconfig.main.json --watch",
+    "dev": "npm run build && electron .",
+    "start": "electron .",
+    "sync-web": "node scripts/sync-web.js",
     "pack": "electron-builder --dir",
     "dist": "npm run build && electron-builder",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:mac:arm": "npm run build && electron-builder --mac --arm64",
-    "dist:mac:intel": "npm run build && electron-builder --mac --x64",
     "dist:win": "npm run build && electron-builder --win",
-    "dist:linux": "npm run build && electron-builder --linux",
-    "postinstall": "npm run build:gateway"
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
   "build": {
     "appId": "com.newma.desktop",
     "productName": "Newma Desktop",
     "directories": {
-      "output": "dist",
+      "output": "dist-elec",
       "buildResources": "resources"
     },
     "files": [
       "dist/**/*",
-      "gateway-source/dist/**/*",
-      "gateway-source/node_modules/**/*",
-      "node_modules/newma-cli/**/*",
       "resources/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "gateway-source",
-        "to": "gateway-source",
-        "filter": [
-          "**/*",
-          "!node_modules/@types/**"
-        ]
-      }
-    ],
     "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": ["universal"]
-        }
-      ],
-      "category": "public.app-category.productivity",
-      "icon": "resources/icons/icon.icns",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "resources/entitlements.mac.plist",
-      "entitlementsInherit": "resources/entitlements.mac.plist"
-    },
-    "dmg": {
-      "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ]
+      "category": "public.app-category.productivity"
     },
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
-      ],
-      "icon": "resources/icons/icon.ico"
+      ]
     },
     "linux": {
-      "target": ["AppImage", "deb"],
-      "icon": "resources/icons/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Chat"
     },
     "nsis": {
@@ -95,13 +56,14 @@
       "perMachine": false
     }
   },
-  "dependencies": {
-    "tree-kill": "^1.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "electron": "^28.3.0",
+    "electron": "^37.10.3",
     "electron-builder": "^24.9.1",
     "typescript": "^5.3.3"
+  },
+  "allowScripts": {
+    "electron@37.10.3": true
   }
 }

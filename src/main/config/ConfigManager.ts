@@ -1,346 +1,92 @@
-import fs from 'fs';
-import path from 'path';
 import { app } from 'electron';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
-export enum ConnectionMode {
-  LOCAL = 'local',
-  CLOUD = 'cloud',
-  HYBRID = 'hybrid',
+export interface DesktopConfig {
+  bridge: { preferredPort: number };
+  newma: { bin: string; openaiEndpoint: string };
+  workspace: { defaultDir: string };
+  web: { publicDir: string };
+  window: { width: number; height: number };
 }
 
-export interface GatewayConfig {
-  type: 'embedded' | 'remote';
-  port: number;
-  host: string;
-  autoStart: boolean;
-  healthCheck: {
-    enabled: boolean;
-    interval: number;
-    timeout: number;
+/** newma 把 settings.json 的 baseUrl 误拼成 /v1/chat/completions 导致 404，
+ *  用完整端点修复；与 newma-web/start.sh 的行为一致。 */
+export const DEFAULT_OPENAI_ENDPOINT = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+
+export function defaultConfig(): DesktopConfig {
+  return {
+    bridge: { preferredPort: 3010 },
+    newma: { bin: process.env.NEWMA_BIN || 'newma', openaiEndpoint: DEFAULT_OPENAI_ENDPOINT },
+    workspace: { defaultDir: path.join(os.homedir(), 'NewmaWorkspace') },
+    web: { publicDir: '' },
+    window: { width: 1280, height: 860 },
   };
 }
 
-export interface NewmaConfig {
-  enabled: boolean;
-  path: string;
-  workspace: string;
-  backend: 'newma' | 'api' | 'mock';
-  useApiMode?: boolean; // 🔥 新增：是否使用API模式（--api标志）
+function mergeSection<T extends object>(base: T, loaded: unknown): T {
+  return { ...base, ...(typeof loaded === 'object' && loaded ? loaded : {}) };
 }
 
-export interface CloudConfig {
-  enabled: boolean;
-  url: string;
-  auth: {
-    enabled: boolean;
-    token?: string;
-  };
-}
-
-export interface GatewayAuthConfig {
-  enabled: boolean;
-  jwtSecret: string;
-  encryptionKey: string;
-  accessTokenExpiry: string;
-  refreshTokenExpiryDays: number;
-}
-
-export interface GatewayDatabaseConfig {
-  enabled: boolean;
-  path: string;
-}
-
-export interface GatewayExplorationConfig {
-  enabled: boolean;
-  logDir: string;
-  schedule: string;
-}
-
-export interface AppConfig {
-  name: string;
-  autoUpdate: boolean;
-  minimizeToTray: boolean;
-  startupOnBoot: boolean;
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
-}
-
-export interface AppConfigData {
-  version: string;
-  mode: ConnectionMode;
-  gateway: GatewayConfig;
-  newma: NewmaConfig;
-  app: AppConfig;
-  cloud: CloudConfig;
-  gatewayAuth: GatewayAuthConfig;
-  gatewayDatabase: GatewayDatabaseConfig;
-  gatewayExploration: GatewayExplorationConfig;
-}
-
-const DEFAULT_CONFIG: AppConfigData = {
-  version: '1.0.0',
-  mode: ConnectionMode.LOCAL,
-  gateway: {
-    type: 'embedded',
-    port: 18790,
-    host: '127.0.0.1',
-    autoStart: true,
-    healthCheck: {
-      enabled: true,
-      interval: 5000,
-      timeout: 10000,
-    },
-  },
-  newma: {
-    enabled: true,
-    path: 'node /opt/homebrew/bin/newma',
-    workspace: '{userHome}/NewmaWorkspace',
-    backend: 'newma',
-    useApiMode: true, // 🔥 新增：默认启用API模式
-  },
-  app: {
-    name: 'Newma Desktop',
-    autoUpdate: true,
-    minimizeToTray: true,
-    startupOnBoot: false,
-    logLevel: 'info',
-  },
-  cloud: {
-    enabled: false,
-    url: 'wss://api.newma.com',
-    auth: {
-      enabled: false,
-      token: '',
-    },
-  },
-  gatewayAuth: {
-    enabled: true,
-    jwtSecret: '',
-    encryptionKey: '',
-    accessTokenExpiry: '7d',
-    refreshTokenExpiryDays: 30,
-  },
-  gatewayDatabase: {
-    enabled: true,
-    path: './database/gateway.db',
-  },
-  gatewayExploration: {
-    enabled: false,
-    logDir: './.memo/logs',
-    schedule: '*/1 * * * *',
-  },
-};
-
-/**
- * Manages application configuration
- */
+/** 极简配置管理：userData/config.json，仅在新架构用到的键上与默认值合并。 */
 export class ConfigManager {
-  private configPath: string;
-  private config: AppConfigData;
+  private readonly configPath: string;
+  private config: DesktopConfig;
 
   constructor() {
-    // Determine config path based on platform
     const userDataPath = app.getPath('userData');
     this.configPath = path.join(userDataPath, 'config.json');
-
-    // Ensure directory exists
-    const configDir = path.dirname(this.configPath);
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true });
-    }
-
-    // Load or create config
-    this.config = this.loadConfig();
+    this.config = this.load();
   }
 
-  /**
-   * Load configuration from file
-   */
-  private loadConfig(): AppConfigData {
-    if (fs.existsSync(this.configPath)) {
-      try {
-        const data = fs.readFileSync(this.configPath, 'utf-8');
-        const loaded = JSON.parse(data);
-        // Merge with defaults to handle new fields
-        return { ...DEFAULT_CONFIG, ...loaded };
-      } catch (error) {
-        console.error('Failed to load config, using defaults:', error);
-        return { ...DEFAULT_CONFIG };
-      }
-    }
-    return { ...DEFAULT_CONFIG };
-  }
-
-  /**
-   * Save configuration to file
-   */
-  private saveConfig(): void {
+  private load(): DesktopConfig {
+    const defaults = defaultConfig();
     try {
+      if (fs.existsSync(this.configPath)) {
+        const loaded = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
+        return {
+          bridge: mergeSection(defaults.bridge, loaded.bridge),
+          newma: mergeSection(defaults.newma, loaded.newma),
+          workspace: mergeSection(defaults.workspace, loaded.workspace),
+          web: mergeSection(defaults.web, loaded.web),
+          window: mergeSection(defaults.window, loaded.window),
+        };
+      }
+    } catch (err) {
+      console.error('[config] 加载失败，使用默认配置:', err);
+    }
+    return defaults;
+  }
+
+  private save(): void {
+    try {
+      fs.mkdirSync(path.dirname(this.configPath), { recursive: true });
       fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2), 'utf-8');
-    } catch (error) {
-      console.error('Failed to save config:', error);
+    } catch (err) {
+      console.error('[config] 保存失败:', err);
     }
   }
 
-  /**
-   * Get all configuration
-   */
-  getConfig(): AppConfigData {
-    return { ...this.config };
+  get(): DesktopConfig {
+    return JSON.parse(JSON.stringify(this.config));
   }
 
-  /**
-   * Get specific configuration section
-   */
-  getGatewayConfig(): GatewayConfig {
-    return { ...this.config.gateway };
+  update(patch: {
+    bridge?: Partial<DesktopConfig['bridge']>;
+    newma?: Partial<DesktopConfig['newma']>;
+    workspace?: Partial<DesktopConfig['workspace']>;
+    web?: Partial<DesktopConfig['web']>;
+    window?: Partial<DesktopConfig['window']>;
+  }): void {
+    if (patch.bridge) this.config.bridge = { ...this.config.bridge, ...patch.bridge };
+    if (patch.newma) this.config.newma = { ...this.config.newma, ...patch.newma };
+    if (patch.workspace) this.config.workspace = { ...this.config.workspace, ...patch.workspace };
+    if (patch.web) this.config.web = { ...this.config.web, ...patch.web };
+    if (patch.window) this.config.window = { ...this.config.window, ...patch.window };
+    this.save();
   }
 
-  getNewmaConfig(): NewmaConfig {
-    return { ...this.config.newma };
-  }
-
-  getAppConfig(): AppConfig {
-    return { ...this.config.app };
-  }
-
-  getCloudConfig(): CloudConfig {
-    return { ...this.config.cloud };
-  }
-
-  getGatewayAuthConfig(): GatewayAuthConfig {
-    return { ...this.config.gatewayAuth };
-  }
-
-  getGatewayDatabaseConfig(): GatewayDatabaseConfig {
-    return { ...this.config.gatewayDatabase };
-  }
-
-  getGatewayExplorationConfig(): GatewayExplorationConfig {
-    return { ...this.config.gatewayExploration };
-  }
-
-  getConnectionMode(): ConnectionMode {
-    return this.config.mode;
-  }
-
-  /**
-   * Update specific configuration section
-   */
-  updateGatewayConfig(config: Partial<GatewayConfig>): void {
-    this.config.gateway = { ...this.config.gateway, ...config };
-    this.saveConfig();
-  }
-
-  updateNewmaConfig(config: Partial<NewmaConfig>): void {
-    this.config.newma = { ...this.config.newma, ...config };
-    this.saveConfig();
-  }
-
-  /**
-   * Check if Newma API mode is enabled
-   */
-  isNewmaApiModeEnabled(): boolean {
-    return this.config.newma.useApiMode || false;
-  }
-
-  updateAppConfig(config: Partial<AppConfig>): void {
-    this.config.app = { ...this.config.app, ...config };
-    this.saveConfig();
-  }
-
-  updateCloudConfig(config: Partial<CloudConfig>): void {
-    this.config.cloud = { ...this.config.cloud, ...config };
-    this.saveConfig();
-  }
-
-  setConnectionMode(mode: ConnectionMode): void {
-    this.config.mode = mode;
-    this.saveConfig();
-  }
-
-  updateGatewayAuthConfig(config: Partial<GatewayAuthConfig>): void {
-    this.config.gatewayAuth = { ...this.config.gatewayAuth, ...config };
-    this.saveConfig();
-  }
-
-  updateGatewayDatabaseConfig(config: Partial<GatewayDatabaseConfig>): void {
-    this.config.gatewayDatabase = { ...this.config.gatewayDatabase, ...config };
-    this.saveConfig();
-  }
-
-  updateGatewayExplorationConfig(config: Partial<GatewayExplorationConfig>): void {
-    this.config.gatewayExploration = { ...this.config.gatewayExploration, ...config };
-    this.saveConfig();
-  }
-
-  /**
-   * Generate environment variables for Gateway
-   */
-  getGatewayEnv(): Record<string, string> {
-    const env: Record<string, string> = {
-      NODE_ENV: 'production',
-    };
-
-    // Add auth configuration if enabled
-    if (this.config.gatewayAuth.enabled) {
-      if (this.config.gatewayAuth.jwtSecret) {
-        env.JWT_SECRET = this.config.gatewayAuth.jwtSecret;
-      }
-      if (this.config.gatewayAuth.encryptionKey) {
-        env.ENCRYPTION_KEY = this.config.gatewayAuth.encryptionKey;
-      }
-      env.ACCESS_TOKEN_EXPIRY = this.config.gatewayAuth.accessTokenExpiry;
-      env.REFRESH_TOKEN_EXPIRY_DAYS = this.config.gatewayAuth.refreshTokenExpiryDays.toString();
-    }
-
-    // Add database configuration if enabled
-    if (this.config.gatewayDatabase.enabled) {
-      env.DATABASE_PATH = this.config.gatewayDatabase.path;
-    }
-
-    // Add exploration configuration
-    env.EXPLORATION_ENABLED = this.config.gatewayExploration.enabled.toString();
-    env.EXPLORATION_LOG_DIR = this.config.gatewayExploration.logDir;
-    env.EXPLORATION_SCHEDULE = this.config.gatewayExploration.schedule;
-
-    return env;
-  }
-
-  /**
-   * Generate or retrieve JWT secret
-   */
-  getOrCreateJWTSecret(): string {
-    if (!this.config.gatewayAuth.jwtSecret) {
-      const crypto = require('crypto');
-      this.config.gatewayAuth.jwtSecret = crypto.randomBytes(32).toString('hex');
-      this.saveConfig();
-    }
-    return this.config.gatewayAuth.jwtSecret;
-  }
-
-  /**
-   * Generate or retrieve encryption key
-   */
-  getOrCreateEncryptionKey(): string {
-    if (!this.config.gatewayAuth.encryptionKey) {
-      const crypto = require('crypto');
-      this.config.gatewayAuth.encryptionKey = crypto.randomBytes(32).toString('hex');
-      this.saveConfig();
-    }
-    return this.config.gatewayAuth.encryptionKey;
-  }
-
-  /**
-   * Reset configuration to defaults
-   */
-  resetToDefaults(): void {
-    this.config = { ...DEFAULT_CONFIG };
-    this.saveConfig();
-  }
-
-  /**
-   * Get configuration file path
-   */
   getConfigPath(): string {
     return this.configPath;
   }

@@ -6,12 +6,6 @@ package-lock.json
 dist/
 *.log
 
-# Gateway (symlink - exclude entirely)
-gateway-source
-
-# Renderer build
-src/renderer/build/
-
 # OS files
 .DS_Store
 Thumbs.db
@@ -29,7 +23,6 @@ Thumbs.db
 
 # Electron Builder output
 /dist-elec/
-/dist-web/
 out/
 
 # Debug

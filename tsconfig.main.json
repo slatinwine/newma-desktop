@@ -2,8 +2,14 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist/main",
-    "module": "commonjs"
+    "module": "commonjs",
+    "rootDir": "./src/main"
   },
-  "include": ["src/main/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/main/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

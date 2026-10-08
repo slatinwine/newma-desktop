@@ -1,188 +1,95 @@
-# Newma Desktop
+# Newma Desktop（newma-web 嵌入版）
 
-**Newma Desktop** is a cross-platform desktop application that provides a native experience for the Newma AI chat system. It packages the Expo web application and Gateway server into a single, easy-to-use desktop app.
+把 [newma-web](../newma-web)（Newma Chat 清水混凝土风格聊天页）嵌入 Electron 壳的桌面版。
+窗口加载应用内桥接服务器伺服的页面，由主进程直接管理本地 `newma --web` 实例——
+**不再依赖 Python 桥（server.py）和 bash 启动脚本**，只需 Node/Electron 和全局安装的
+[newma CLI](https://www.npmjs.com/package/newma-cli)。
 
-## ✨ Features
+## ✨ 功能
 
-- ✅ **Cross-Platform Support**: macOS (Intel + Apple Silicon), Windows, Linux
-- ✅ **Offline Mode**: Fully functional without internet connection
-- ✅ **Integrated Gateway**: Local Gateway server bundled with the app
-- ✅ **Newma CLI Integration**: AI chat capabilities powered by newma CLI
-- ✅ **Modern UI**: React Native web interface
-- ✅ **Native Features**: System tray, notifications, auto-updater
+- **嵌入 newma-web 前端**：与浏览器版完全相同的界面（会话、技能库、插件市场、智能选项、工作区绑定）
+- **实例管理**：按需懒启动 `newma --web`，同一工作区复用实例，空闲 30 分钟自动回收
+- **默认实例常驻**：未绑定工作区的会话走默认实例（`~/NewmaWorkspace`），掉线自动重启
+- **OPENAI_ENDPOINT 修复**：自动传入完整端点，规避 newma baseUrl 误拼导致的 404
+- **跨平台**：Windows / macOS / Linux（Windows 下自动处理 `.cmd` 包装脚本与进程树清理）
 
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Node.js 18+ and npm
-- Python 3 (for node-gyp, if building native modules)
-
-### Installation
+## 🚀 快速开始
 
 ```bash
-# Clone or navigate to the project
-cd /Users/mac/desktopnewma
-
-# Install dependencies
-npm install
-
-# Build Gateway (will be done automatically in postinstall)
-npm run build:gateway
-
-# Build Expo Web app
-npm run build:web
-
-# Run in development mode
-npm run dev
+npm install        # 首次运行
+npm run dev        # 编译并启动
+# Windows 也可直接双击 start.cmd；macOS/Linux 用 ./start.sh
 ```
 
-### Development
+前置条件：Node.js 18+、全局安装 `newma`（`npm i -g newma-cli`）、可用的模型服务配置（`~/.kode/settings.json`）。
 
-```bash
-# Build main process (watch mode)
-npm run watch
-
-# Build web app from source
-npm run build:web
-
-# Rebuild Gateway
-npm run build:gateway
-
-# Start development server
-npm run dev
-```
-
-### Building for Distribution
-
-```bash
-# Build for current platform
-npm run dist
-
-# macOS (Universal - Intel + Apple Silicon)
-npm run dist:mac
-
-# macOS (ARM64 only)
-npm run dist:mac:arm
-
-# macOS (x64 only)
-npm run dist:mac:intel
-
-# Windows
-npm run dist:win
-
-# Linux
-npm run dist:linux
-```
-
-## 📁 Project Structure
+## 📁 结构
 
 ```
-desktopnewma/
-├── src/
-│   ├── main/              # Electron main process
-│   │   ├── gateway/       # Gateway management
-│   │   ├── config/        # Configuration management
-│   │   ├── tray/          # System tray
-│   │   └── index.ts       # Main entry point
-│   ├── preload/           # Preload scripts
-│   └── renderer/          # Expo web build
-│       └── build/         # Web app output
-├── gateway-source/        # Gateway source (symlink)
-├── scripts/               # Build scripts
-│   ├── build-gateway.js
-│   └── build-web.js
-└── resources/             # Resources (icons, etc.)
+├── src/main/
+│   ├── index.ts                  # 应用入口：窗口、生命周期、IPC
+│   ├── bridge/BridgeServer.ts    # HTTP 桥（server.py 的 TS 移植）：页面伺服 + API 反代 + 工作区路由
+│   ├── newma/NewmaInstanceManager.ts  # newma --web 实例懒启动/复用/回收/自愈
+│   ├── newma/localContent.ts     # 技能库/插件市场枚举（front-matter 解析）
+│   ├── config/ConfigManager.ts   # 配置（userData/config.json）
+│   └── util/processUtils.ts      # 端口分配、newma 可执行文件解析、进程树清理
+├── src/preload/index.ts          # 受控暴露窗口控制/状态查询
+├── resources/newma-web/index.html # 嵌入的前端页面（来自 newma-web/public）
+└── scripts/sync-web.js           # 从 newma-web 仓库同步最新前端页面
 ```
 
-## 🔧 Configuration
+## 🌉 桥接接口（与 server.py 一致）
 
-Configuration is stored in:
-- **macOS**: `~/Library/Application Support/Newma Desktop/config.json`
-- **Windows**: `%APPDATA%/Newma Desktop/config.json`
-- **Linux**: `~/.config/Newma Desktop/config.json`
+| 端点 | 用途 |
+|---|---|
+| `GET /` | 伺服 `resources/newma-web/index.html` |
+| `GET /health`、`GET /api/status` | 反代到 newma 实例（`?ws=` 路由工作区） |
+| `POST /api/execute` | 提交消息（body `workspace` 字段路由工作区） |
+| `POST /api/clear`、`POST /api/stop` | 反代 |
+| `POST /api/workspace/ensure` | 懒启动某工作区的实例 |
+| `GET /api/workspaces` | 列出运行中的实例 |
+| `GET /api/local/skills`、`GET /api/local/plugins` | 本地技能/插件枚举 |
 
-### Default Configuration
+桥接服务器只绑定 127.0.0.1。首选端口 3010，被占用时自动换空闲端口。
+
+## 🔧 配置（`%APPDATA%/Newma Desktop/config.json` 等平台标准位置）
 
 ```json
 {
-  "version": "1.0.0",
-  "mode": "local",
-  "gateway": {
-    "type": "embedded",
-    "port": 18789,
-    "autoStart": true
-  },
+  "bridge": { "preferredPort": 3010 },
   "newma": {
-    "enabled": true,
-    "backend": "newma"
-  }
+    "bin": "newma",
+    "openaiEndpoint": "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+  },
+  "workspace": { "defaultDir": "~/NewmaWorkspace" },
+  "web": { "publicDir": "" },
+  "window": { "width": 1280, "height": 860 }
 }
 ```
 
-## 🌤️ Cloud Mode (Future)
+- `newma.bin`：newma 可执行文件（也可用环境变量 `NEWMA_BIN` 覆盖）
+- `newma.openaiEndpoint`：留空则不注入 `OPENAI_ENDPOINT`
+- `web.publicDir`：前端页面目录覆盖；留空用打包内置的 `resources/newma-web`
+- 环境变量 `NEWMA_DESKTOP_DEVTOOLS=1` 可打开 DevTools
 
-The application is designed to support cloud mode in the future. See [ELECTRON_ARCHITECTURE.md](./ELECTRON_ARCHITECTURE.md) for details on cloud migration.
+## 🔄 同步 newma-web 前端更新
 
-## 📚 Documentation
-
-- [ELECTRON_ARCHITECTURE.md](./ELECTRON_ARCHITECTURE.md) - Complete architecture design and cloud migration guide
-- [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) - Implementation details and code templates
-
-## 🛠️ Troubleshooting
-
-### Gateway won't start
-
-1. Check if Gateway is built:
-   ```bash
-   npm run build:gateway
-   ```
-
-2. Check Gateway logs in the console
-
-3. Verify port 18789 is not in use
-
-### Web app not loading
-
-1. Rebuild the web app:
-   ```bash
-   npm run build:web
-   ```
-
-2. Check if `src/renderer/build/index.html` exists
-
-### Build fails on macOS
-
-If you see code signing errors:
+前端页面是 newma-web 仓库的拷贝，那边有更新后执行：
 
 ```bash
-# Disable code signing for development
-export CSC_IDENTITY_AUTO_DISCOVERY=false
-npm run dist
+npm run sync-web   # 默认取 ../newma-web/public/index.html
+npm run dev
 ```
 
-## 🔐 Security
+## 📦 打包
 
-- Gateway only listens on 127.0.0.1 (localhost)
-- Context isolation enabled in Electron
-- Node integration disabled in renderer
-- Safe process spawning using `spawn` instead of `exec`
+```bash
+npm run dist       # 当前平台
+npm run dist:win   # Windows NSIS
+npm run dist:mac   # macOS
+npm run dist:linux # Linux
+```
 
 ## 📝 License
 
 MIT
-
-## 🤝 Contributing
-
-This is part of the Newma project. For contributions, please ensure:
-
-1. Code follows existing style
-2. TypeScript types are properly defined
-3. Changes are tested on all target platforms
-4. Documentation is updated
-
----
-
-**Version**: 1.0.0
-**Status**: Development
-**Last Updated**: 2025-03-02

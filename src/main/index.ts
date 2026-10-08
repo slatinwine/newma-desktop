@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { BridgeServer } from './bridge/BridgeServer';
@@ -23,6 +23,18 @@ function resolvePublicDir(configured: string): string {
     if (dir && fs.existsSync(path.join(dir, 'index.html'))) return dir;
   }
   return candidates[0];
+}
+
+/** 应用图标：开发与打包两种布局下定位 resources/icons/icon.ico。 */
+function resolveIcon(): string | undefined {
+  const candidates = [
+    path.join(__dirname, '../../resources/icons/icon.ico'),
+    path.join(process.resourcesPath || '', 'icons/icon.ico'),
+  ];
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return undefined;
 }
 
 async function initialize(): Promise<string> {
@@ -75,20 +87,41 @@ function setupIpcHandlers() {
 }
 
 function createWindow(url: string) {
-  mainWindow = new BrowserWindow({
-    width: configManager?.get().window.width || 1280,
-    height: configManager?.get().window.height || 860,
+  const winCfg = configManager?.get().window;
+  const bounds: Electron.BrowserWindowConstructorOptions = {
+    width: winCfg?.width || 1280,
+    height: winCfg?.height || 860,
     minWidth: 800,
     minHeight: 600,
+  };
+  // 恢复上次位置（须确保落在任一显示器可见范围内，否则交给系统默认）
+  if (
+    typeof winCfg?.x === 'number' &&
+    typeof winCfg?.y === 'number' &&
+    screen.getAllDisplays().some((d) => {
+      const { x, y, width, height } = d.workArea;
+      return (
+        winCfg.x! >= x - 20 && winCfg.y! >= y - 20 && winCfg.x! < x + width && winCfg.y! < y + height
+      );
+    })
+  ) {
+    bounds.x = winCfg.x;
+    bounds.y = winCfg.y;
+  }
+
+  mainWindow = new BrowserWindow({
+    ...bounds,
     autoHideMenuBar: true,
     title: 'Newma Desktop',
     backgroundColor: '#33322f',
+    icon: resolveIcon(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  if (winCfg?.maximized) mainWindow.maximize();
 
   Menu.setApplicationMenu(null);
   mainWindow.loadURL(url);
@@ -106,6 +139,19 @@ function createWindow(url: string) {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
+  // 记录窗口位置/尺寸，下次启动恢复（close 兜底：move/resized 在部分场景不触发）
+  const saveBounds = () => {
+    if (!mainWindow || !configManager || mainWindow.isDestroyed()) return;
+    const b = mainWindow.getBounds();
+    configManager.update({
+      window: { width: b.width, height: b.height, x: b.x, y: b.y, maximized: mainWindow.isMaximized() },
+    });
+  };
+  mainWindow.on('resized', saveBounds);
+  mainWindow.on('moved', saveBounds);
+  mainWindow.on('maximize', saveBounds);
+  mainWindow.on('unmaximize', saveBounds);
+  mainWindow.on('close', saveBounds);
   mainWindow.on('closed', () => {
     mainWindow = null;
   });

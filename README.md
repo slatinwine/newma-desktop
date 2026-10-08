@@ -81,6 +81,20 @@ npm run sync-web   # 默认取 ../newma-web/public/index.html
 npm run dev
 ```
 
+## 🛠 开发脚本
+
+| 命令 | 用途 |
+|---|---|
+| `npm run dev` | 编译并启动（开发） |
+| `npm run test:bridge` | 桥接集成测试（真实拉起 newma 实例，覆盖页面/反代/工作区/回收/进程清理） |
+| `npm run sync-web` | 从 newma-web 仓库同步前端页面 |
+| `npm run gen-icon` | 重新生成应用图标（resources/icons，PowerShell + GDI+） |
+| `npm run push` | 经 GitHub Actions 中转推送（github.com:443 被墙但 api.github.com 可达时用） |
+| `npm run pack` | electron-builder --dir 打包验证 |
+
+> 网络直连 GitHub 被阻断时，`git push` 会超时；用 `npm run push`（或 `node scripts/push-via-actions.mjs`）
+> 走 api.github.com + Actions 中转，远端 SHA 与本地严格一致。
+
 ## 📦 打包
 
 ```bash

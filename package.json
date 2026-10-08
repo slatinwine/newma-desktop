@@ -13,6 +13,9 @@
     "dev": "npm run build && electron .",
     "start": "electron .",
     "sync-web": "node scripts/sync-web.js",
+    "gen-icon": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gen-icon.ps1",
+    "push": "node scripts/push-via-actions.mjs",
+    "test:bridge": "node scripts/test-bridge.mjs",
     "pack": "electron-builder --dir",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
@@ -31,7 +34,8 @@
       "resources/**/*"
     ],
     "mac": {
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "icon": "resources/icons/icon.png"
     },
     "win": {
       "target": [
@@ -41,14 +45,16 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "icon": "resources/icons/icon.ico"
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
-      "category": "Chat"
+      "category": "Chat",
+      "icon": "resources/icons/icon.png"
     },
     "nsis": {
       "oneClick": false,

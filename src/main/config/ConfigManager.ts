@@ -8,7 +8,13 @@ export interface DesktopConfig {
   newma: { bin: string; openaiEndpoint: string };
   workspace: { defaultDir: string };
   web: { publicDir: string };
-  window: { width: number; height: number };
+  window: {
+    width: number;
+    height: number;
+    x?: number;
+    y?: number;
+    maximized?: boolean;
+  };
 }
 
 /** newma 把 settings.json 的 baseUrl 误拼成 /v1/chat/completions 导致 404，
@@ -79,6 +85,7 @@ export class ConfigManager {
     web?: Partial<DesktopConfig['web']>;
     window?: Partial<DesktopConfig['window']>;
   }): void {
+    /* 同 mergeSection 逻辑，window 的可选字段（x/y/maximized）一并合并 */
     if (patch.bridge) this.config.bridge = { ...this.config.bridge, ...patch.bridge };
     if (patch.newma) this.config.newma = { ...this.config.newma, ...patch.newma };
     if (patch.workspace) this.config.workspace = { ...this.config.workspace, ...patch.workspace };

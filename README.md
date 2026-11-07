@@ -112,3 +112,7 @@ npm run dist:linux # Linux
 ## 📝 License
 
 MIT
+
+## 关注公众号
+
+![公众号二维码](qrcode.jpg)
